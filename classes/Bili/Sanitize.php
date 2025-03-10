@@ -31,13 +31,12 @@ class Sanitize
      * @param string|array $varValue
      * @return string|array
      */
-    public static function toEntities($varValue)
+    public static function toEntities(mixed $varValue): string|array
     {
         if (is_array($varValue)) {
-            $varReturn = [];
-            foreach ($varValue as $key => $value) {
-                $varReturn[$key] = htmlentities($value, ENT_QUOTES | ENT_IGNORE, 'UTF-8', false);
-            }
+            $varReturn = array_map(static function ($value) {
+                return htmlentities($value, ENT_QUOTES | ENT_IGNORE, 'UTF-8', false);
+            }, $varValue);
         } else {
             $varReturn = htmlentities($varValue, ENT_QUOTES | ENT_IGNORE, 'UTF-8', false);
         }
@@ -51,13 +50,12 @@ class Sanitize
      * @param string|array $varValue
      * @return string|array
      */
-    public static function fromEntities($varValue)
+    public static function fromEntities(mixed $varValue): array|string
     {
         if (is_array($varValue)) {
-            $varReturn = [];
-            foreach ($varValue as $key => $value) {
-                $varReturn[$key] = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
-            }
+            $varReturn = array_map(static function ($value) {
+                return html_entity_decode($value, ENT_QUOTES, 'UTF-8');
+            }, $varValue);
         } else {
             $varReturn = html_entity_decode($varValue, ENT_QUOTES, 'UTF-8');
         }
@@ -104,7 +102,7 @@ class Sanitize
         $intBase = (int) $fltReturn;
 
         if (strlen((string)$intBase) > $intMaxLength) {
-            $fltReturn = (1 * pow(10, $intMaxLength)) - 1;
+            $fltReturn = (1 * (10 ** $intMaxLength)) - 1;
         }
 
         return $fltReturn;
@@ -165,14 +163,13 @@ class Sanitize
      * 1541045,45   => 1541045.45
      * 1541045.45   => 1541045.45
      *
-     * @param float|int|string $strValue
+     * @param float|int|string|null $strValue
      * @return float
      */
-    public static function toFloat(float|int|string $strValue): float
+    public static function toFloat(float|int|string|null $strValue): float
     {
         if (strpos((string) $strValue, ".") < strpos((string) $strValue, ",")) {
-            $strValue = str_replace(".", "", (string) $strValue);
-            $strValue = str_replace(",", ".", $strValue);
+            $strValue = str_replace(array(".", ","), array("", "."), (string)$strValue);
         } else {
             $strValue = str_replace(",", "", (string) $strValue);
         }
