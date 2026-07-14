@@ -50,7 +50,7 @@ class Language
      * @param string $langPath
      * @param string|string[]|null $overwritePaths
      */
-    private function __construct($strLang = "", $langPath = "", $overwritePaths = null)
+    protected function __construct($strLang = "", $langPath = "", $overwritePaths = null)
     {
         $this->defaultLang = $strLang;
         $this->langPath = $langPath;
@@ -208,12 +208,20 @@ class Language
     }
 
     /**
+     * Set a specific language and load its file.
+     *
+     * When $blnPersist is true (default) the choice is also written to the
+     * session and a 30-day cookie, preserving the original behavior for
+     * stateful web apps. Pass false in stateless contexts (e.g. a REST API
+     * resolving the language from the Accept-Language header) to load the
+     * language file in-process only, without touching the session or cookie.
+     *
      * @param string $strLang
+     * @param bool $blnPersist
      * @return bool
      */
-    public function setLang($strLang)
+    public function setLang($strLang, $blnPersist = true)
     {
-        //*** Set a specific language and write it to the session and cockie.
         $blnReturn = false;
 
         if ($strLang !== $this->activeLang) {
@@ -223,23 +231,11 @@ class Language
         //*** Check if the language file exists and is different from the current language.
         if (file_exists($this->langPath . "/" . $strLang . ".php")
                 && (count(self::$languages) === 0 || $this->forceReload)) {
-            //*** Write to cookie.
-            try {
-                setcookie(
-                    'language',
-                    $strLang,
-                    time() + 60*60*24*30,
-                    '/',
-                    '',
-                    static::$secureCookie,
-                    true
-                );
-            } catch (\Exception $ex) {
-                //*** Probably "headers already sent" error. Never mind. The cookie is not that important.
+            if ($blnPersist) {
+                //*** Persist the choice to the cookie and the session.
+                $this->writeCookie($strLang);
+                $_SESSION['language'] = $strLang;
             }
-
-            //*** Write to session.
-            $_SESSION['language'] = $strLang;
 
             //*** Load new language file;
             $this->getLang($strLang);
@@ -247,6 +243,30 @@ class Language
         }
 
         return $blnReturn;
+    }
+
+    /**
+     * Write the language cookie. Isolated so stateless callers can skip it and
+     * so it can be observed in tests (the CLI SAPI sends no real headers).
+     *
+     * @param string $strLang
+     * @return void
+     */
+    protected function writeCookie($strLang)
+    {
+        try {
+            setcookie(
+                'language',
+                $strLang,
+                time() + 60*60*24*30,
+                '/',
+                '',
+                static::$secureCookie,
+                true
+            );
+        } catch (\Exception $ex) {
+            //*** Probably "headers already sent" error. Never mind. The cookie is not that important.
+        }
     }
 
     /**
