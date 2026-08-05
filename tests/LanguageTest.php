@@ -4,6 +4,7 @@ namespace Bili\Tests;
 
 use Bili\Language;
 use Bili\LanguageCollection;
+use Bili\Tests\Support\CookieSpy;
 use PHPUnit\Framework\TestCase;
 
 class LanguageTest extends TestCase
@@ -143,17 +144,32 @@ class LanguageTest extends TestCase
     }
 
     /**
-     * The default ($blnPersist = true) still writes the language cookie.
+     * The default ($blnPersist = true) writes the language cookie, scoped to the
+     * root path with a 30-day expiry and the HttpOnly flag.
      *
      * @return void
      */
     public function testSetLangPersistWritesCookie(): void
     {
-        $_SESSION = [];
-        $spy = $this->createCookieSpy();
-        $spy->setLang(self::NL);
+        Language::getInstance()->setLang(self::EN);
+        CookieSpy::reset();
 
-        $this->assertSame(1, $spy->cookieWrites);
+        Language::getInstance()->setLang(self::NL);
+
+        $arrCalls = CookieSpy::calls();
+        $this->assertCount(1, $arrCalls);
+
+        [$strName, $strValue, $intExpires, $strPath, $strDomain, $blnSecure, $blnHttpOnly] = $arrCalls[0];
+        $this->assertSame('language', $strName);
+        $this->assertSame(self::NL, $strValue);
+        $this->assertSame('/', $strPath);
+        $this->assertSame('', $strDomain);
+        $this->assertFalse($blnSecure);
+        $this->assertTrue($blnHttpOnly);
+
+        //*** Bracket the expiry rather than pin it, since time() advances.
+        $this->assertGreaterThan(time() + 60 * 60 * 24 * 29, $intExpires);
+        $this->assertLessThanOrEqual(time() + 60 * 60 * 24 * 30, $intExpires);
     }
 
     /**
@@ -163,42 +179,83 @@ class LanguageTest extends TestCase
      */
     public function testSetLangNoPersistDoesNotWriteCookie(): void
     {
-        $_SESSION = [];
-        $spy = $this->createCookieSpy();
-        $spy->setLang(self::NL, false);
+        Language::getInstance()->setLang(self::EN);
+        CookieSpy::reset();
 
-        $this->assertSame(0, $spy->cookieWrites);
+        Language::getInstance()->setLang(self::NL, false);
+
+        $this->assertSame([], CookieSpy::calls());
     }
 
     /**
-     * A Language subclass that records cookie writes instead of sending a real
-     * Set-Cookie header, which is unobservable under the CLI SAPI.
+     * An unknown language is never persisted, so an unvalidated Accept-Language
+     * value cannot poison the stored choice.
      *
-     * @return Language
+     * @return void
      */
-    private function createCookieSpy()
+    public function testSetLangUnknownLanguageIsNotPersisted(): void
     {
-        return new class extends Language {
-            /** @var int */
-            public $cookieWrites = 0;
+        Language::getInstance()->setLang(self::EN);
+        $_SESSION = [];
+        CookieSpy::reset();
 
-            public function __construct()
-            {
-                parent::__construct("english-utf-8", __DIR__ . '/languages/');
-            }
+        $this->assertFalse(Language::getInstance()->setLang('does-not-exist'));
 
-            protected function writeCookie($strLang)
-            {
-                $this->cookieWrites++;
-            }
-        };
+        $this->assertArrayNotHasKey('language', $_SESSION);
+        $this->assertSame([], CookieSpy::calls());
+        $this->assertSame(self::EN, Language::getInstance()->getActiveLang());
+    }
+
+    /**
+     * With $blnPersist = false a stored session language survives untouched.
+     * A stateless call must not flip the visitor's saved choice.
+     *
+     * @return void
+     */
+    public function testSetLangNoPersistLeavesStoredSessionLanguageIntact(): void
+    {
+        Language::getInstance()->setLang(self::EN);
+        $_SESSION['language'] = self::EN;
+
+        Language::getInstance()->setLang(self::NL, false);
+
+        $this->assertSame(self::EN, $_SESSION['language']);
+        $this->assertSame(self::NL, Language::getInstance()->getActiveLang());
+    }
+
+    /**
+     * setLang() reports whether the language file was actually loaded.
+     * False means unchanged or unknown.
+     *
+     * @return void
+     */
+    public function testSetLangReturnsWhetherTheFileWasLoaded(): void
+    {
+        $objLanguage = Language::getInstance();
+
+        //*** A fresh instance already holds the default, so nothing is reloaded.
+        $this->assertFalse($objLanguage->setLang(self::EN));
+
+        $this->assertTrue($objLanguage->setLang(self::NL));
+        $this->assertTrue($objLanguage->setLang(self::EN, false));
+        $this->assertFalse($objLanguage->setLang('does-not-exist'));
     }
 
     public function setUp(): void
     {
         parent::setUp();
         setlocale(LC_ALL, 'en_US.UTF-8');
+        Language::setUseSecureCookie(false);
         $objLanguage = Language::singleton("english-utf-8", __DIR__ . '/languages/');
         $objLanguage->setLocale();
+    }
+
+    public function tearDown(): void
+    {
+        CookieSpy::reset();
+        $_SESSION = [];
+        $_COOKIE = [];
+
+        parent::tearDown();
     }
 }

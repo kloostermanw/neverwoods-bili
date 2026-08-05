@@ -46,11 +46,14 @@ class Language
     private $forceReload            = false;
 
     /**
+     * Private: instances are created by singleton() or getInstance().
+     * Resolves and loads the language file immediately.
+     *
      * @param string $strLang
      * @param string $langPath
      * @param string|string[]|null $overwritePaths
      */
-    protected function __construct($strLang = "", $langPath = "", $overwritePaths = null)
+    private function __construct($strLang = "", $langPath = "", $overwritePaths = null)
     {
         $this->defaultLang = $strLang;
         $this->langPath = $langPath;
@@ -208,17 +211,13 @@ class Language
     }
 
     /**
-     * Set a specific language and load its file.
-     *
-     * When $blnPersist is true (default) the choice is also written to the
-     * session and a 30-day cookie, preserving the original behavior for
-     * stateful web apps. Pass false in stateless contexts (e.g. a REST API
-     * resolving the language from the Accept-Language header) to load the
-     * language file in-process only, without touching the session or cookie.
+     * Sets a specific language and loads its file, session and cookie included.
+     * Pass $blnPersist = false to load without writing either.
+     * Persists only when the file is loaded.
      *
      * @param string $strLang
      * @param bool $blnPersist
-     * @return bool
+     * @return bool True when the language file was loaded, false when nothing changed.
      */
     public function setLang($strLang, $blnPersist = true)
     {
@@ -246,13 +245,13 @@ class Language
     }
 
     /**
-     * Write the language cookie. Isolated so stateless callers can skip it and
-     * so it can be observed in tests (the CLI SAPI sends no real headers).
+     * Writes the 30-day language cookie, ignoring failures.
+     * A missing cookie falls back to the default language.
      *
      * @param string $strLang
      * @return void
      */
-    protected function writeCookie($strLang)
+    private function writeCookie($strLang)
     {
         try {
             setcookie(
@@ -265,7 +264,8 @@ class Language
                 true
             );
         } catch (\Exception $ex) {
-            //*** Probably "headers already sent" error. Never mind. The cookie is not that important.
+            //*** Only thrown when the host converts warnings to exceptions; plain
+            //*** PHP warns and returns false. The cookie is not worth failing over.
         }
     }
 

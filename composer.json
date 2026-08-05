@@ -35,6 +35,7 @@
     "autoload-dev": {
         "psr-4": {
             "Bili\\Tests\\": "tests/"
-        }
+        },
+        "files": ["tests/Support/setcookie.php"]
     }
 }
